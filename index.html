@@ -651,8 +651,10 @@
 /* ================= CONFIG ================= */
 // Lien de réservation (iClosed)
 const BOOKING_URL = "https://app.iclosed.io/e/hackmybody/appel-d-couverte";
-// Endpoint d'envoi des leads (webhook Zapier/Make, Google Sheet, CRM…) — laisser vide pour désactiver
-const LEAD_WEBHOOK = "";
+// Capture de lead systeme.io : POST vers la page de capture du tunnel "H-Score Leads".
+// Ne fonctionne que servi depuis www.hackmybody.fr (même domaine) — bloqué par CORS ailleurs (l'échec est silencieux, le score s'affiche quand même).
+const OPTIN_URL = "https://www.hackmybody.fr/f6f5612e";
+const OPTIN_ENTITY_ID = "9049294d-f7e7-44c3-b7c7-9db35c0b8cab"; // bouton "ENVOYER" de la page de capture
 
 /* ================= QUESTIONS =================
    Chaque option a un "pts" (0 = très défavorable, 10 = optimal).
@@ -869,14 +871,29 @@ function submitLead(e) {
     return false;
   }
   const score = computeScore();
-  const detail = answers.map((a, i) => ({ q: QUESTIONS[i].q, r: QUESTIONS[i].options[a].label }));
-  if (LEAD_WEBHOOK) {
-    fetch(LEAD_WEBHOOK, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...lead, score, detail, date: new Date().toISOString() }),
-    }).catch(() => {});
-  }
+  const profile = PROFILES.find(p => score <= p.max);
+  // h_score / h_profil ne sont conservés par systeme.io que si ces champs sont ajoutés au formulaire de la page de capture
+  fetch(OPTIN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+    body: JSON.stringify({
+      optin: {
+        fields: {
+          first_name: lead.name,
+          email: lead.email,
+          phone_number: lead.phone,
+          h_score: String(score),
+          h_profil: profile.label,
+        },
+        timeZone: (Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris"),
+        popupId: null,
+        isDesktop: window.matchMedia("(min-width: 768px)").matches,
+        surveysResults: [],
+        entityId: OPTIN_ENTITY_ID,
+        checkBoxIds: [],
+      },
+    }),
+  }).catch(() => {});
   showResult(score);
   return false;
 }
